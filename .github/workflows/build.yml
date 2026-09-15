@@ -1,26 +1,482 @@
-name: Build APK
-on: [push]
+name: Build Qt Android APK
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    
     steps:
       - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.6.2'
-          target: 'android'
-          arch: 'android_arm64_v8a'
-      - uses: actions/setup-java@v4
+      
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Build APK
-        run: |
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          qt-cmake -B build -DANDROID_ABI=arm64-v8a
-          cmake --build build -- -j4
-          cmake --build build --target apk
-      - uses: actions/upload-artifact@v4
+      
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Install Qt for Android
+        uses: jurplel/install-qt-action@v3
         with:
-          name: my-apk
-          path: build/android-build/*.apk
+          version: '6.7.3'
+          host: 'linux'
+          target: 'android'
+          arch: 'android_arm64_v8a'
+          cache: true
+      
+      - name: Configure environment
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk/ | head -n1)" >> $GITHUB_ENV
+          echo "ANDROID_API_LEVEL=34" >> $GITHUB_ENV
+      
+      - name: Create CMakeLists.txt
+        run: |
+          cat > CMakeLists.txt << 'EOF'
+          cmake_minimum_required(VERSION 3.24)
+          project(Calculator LANGUAGES CXX)
+          
+          set(CMAKE_AUTOMOC ON)
+          set(CMAKE_AUTORCC ON)
+          set(CMAKE_AUTOUIC ON)
+          
+          find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+          
+          add_executable(calculator
+              src/main.cpp
+              src/calculator.h
+              src/calculator.cpp
+              qml/qml.qrc
+          )
+          
+          target_link_libraries(calculator
+              Qt6::Core
+              Qt6::Gui
+              Qt6::Qml
+              Qt6::Quick
+          )
+          EOF
+      
+      - name: Create main.cpp
+        run: |
+          mkdir -p src
+          cat > src/main.cpp << 'EOF'
+          #include <QGuiApplication>
+          #include <QQmlApplicationEngine>
+          #include <QQmlContext>
+          #include "calculator.h"
+          
+          int main(int argc, char *argv[])
+          {
+              QGuiApplication app(argc, argv);
+              
+              Calculator calc;
+              
+              QQmlApplicationEngine engine;
+              engine.rootContext()->setContextProperty("calculator", &calc);
+              
+              const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
+              engine.load(url);
+              
+              if (engine.rootObjects().isEmpty())
+                  return -1;
+              
+              return app.exec();
+          }
+          EOF
+      
+      - name: Create calculator.h
+        run: |
+          cat > src/calculator.h << 'EOF'
+          #ifndef CALCULATOR_H
+          #define CALCULATOR_H
+          
+          #include <QObject>
+          
+          class Calculator : public QObject {
+              Q_OBJECT
+              Q_PROPERTY(QString display READ display NOTIFY displayChanged)
+          
+          public:
+              explicit Calculator(QObject *parent = nullptr);
+              QString display() const;
+          
+              Q_INVOKABLE void appendNumber(const QString &number);
+              Q_INVOKABLE void appendOperator(const QString &op);
+              Q_INVOKABLE void calculate();
+              Q_INVOKABLE void clear();
+          
+          signals:
+              void displayChanged();
+          
+          private:
+              QString m_display;
+              QString m_previousValue;
+              QString m_operator;
+          };
+          
+          #endif // CALCULATOR_H
+          EOF
+      
+      - name: Create calculator.cpp
+        run: |
+          cat > src/calculator.cpp << 'EOF'
+          #include "calculator.h"
+          
+          Calculator::Calculator(QObject *parent)
+              : QObject(parent), m_display("0"), m_previousValue(""), m_operator("")
+          {
+          }
+          
+          QString Calculator::display() const {
+              return m_display;
+          }
+          
+          void Calculator::appendNumber(const QString &number) {
+              if (m_display == "0") {
+                  m_display = number;
+              } else {
+                  m_display += number;
+              }
+              emit displayChanged();
+          }
+          
+          void Calculator::appendOperator(const QString &op) {
+              m_previousValue = m_display;
+              m_operator = op;
+              m_display = "0";
+              emit displayChanged();
+          }
+          
+          void Calculator::calculate() {
+              double result = 0;
+              double current = m_display.toDouble();
+              double previous = m_previousValue.toDouble();
+              
+              if (m_operator == "+") result = previous + current;
+              else if (m_operator == "-") result = previous - current;
+              else if (m_operator == "*") result = previous * current;
+              else if (m_operator == "/") result = current != 0 ? previous / current : 0;
+              
+              m_display = QString::number(result);
+              m_operator = "";
+              m_previousValue = "";
+              emit displayChanged();
+          }
+          
+          void Calculator::clear() {
+              m_display = "0";
+              m_previousValue = "";
+              m_operator = "";
+              emit displayChanged();
+          }
+          EOF
+      
+      - name: Create QML resources
+        run: |
+          mkdir -p qml
+          cat > qml/qml.qrc << 'EOF'
+          <RCC>
+              <qresource prefix="/">
+                  <file>qml/main.qml</file>
+              </qresource>
+          </RCC>
+          EOF
+      
+      - name: Create main.qml
+        run: |
+          cat > qml/main.qml << 'EOF'
+          import QtQuick
+          import QtQuick.Controls
+          import QtQuick.Layouts
+          
+          ApplicationWindow {
+              visible: true
+              width: 400
+              height: 600
+              title: "Calculator"
+              
+              ColumnLayout {
+                  anchors.fill: parent
+                  anchors.margins: 10
+                  spacing: 10
+                  
+                  TextField {
+                      id: displayField
+                      text: calculator.display
+                      readOnly: true
+                      font.pixelSize: 32
+                      horizontalAlignment: Text.AlignRight
+                      Layout.fillWidth: true
+                      Layout.preferredHeight: 80
+                      background: Rectangle {
+                          color: "#f0f0f0"
+                          border.color: "#cccccc"
+                          radius: 5
+                      }
+                  }
+                  
+                  GridLayout {
+                      columns: 4
+                      rowSpacing: 5
+                      columnSpacing: 5
+                      Layout.fillWidth: true
+                      Layout.fillHeight: true
+                      
+                      Button {
+                          text: "C"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          font.pixelSize: 20
+                          onClicked: calculator.clear()
+                          background: Rectangle {
+                              color: "#ff6b6b"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Button {
+                          text: "/"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          font.pixelSize: 20
+                          onClicked: calculator.appendOperator("/")
+                          background: Rectangle {
+                              color: "#4ecdc4"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Button {
+                          text: "*"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          font.pixelSize: 20
+                          onClicked: calculator.appendOperator("*")
+                          background: Rectangle {
+                              color: "#4ecdc4"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Button {
+                          text: "-"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          font.pixelSize: 20
+                          onClicked: calculator.appendOperator("-")
+                          background: Rectangle {
+                              color: "#4ecdc4"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Repeater {
+                          model: [7, 8, 9]
+                          Button {
+                              text: modelData
+                              Layout.fillWidth: true
+                              Layout.fillHeight: true
+                              font.pixelSize: 20
+                              onClicked: calculator.appendNumber(text)
+                              background: Rectangle {
+                                  color: "#95e1d3"
+                                  radius: 5
+                              }
+                              contentItem: Text {
+                                  text: parent.text
+                                  font: parent.font
+                                  color: "white"
+                                  horizontalAlignment: Text.AlignHCenter
+                                  verticalAlignment: Text.AlignVCenter
+                              }
+                          }
+                      }
+                      
+                      Button {
+                          text: "+"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          Layout.rowSpan: 2
+                          font.pixelSize: 20
+                          onClicked: calculator.appendOperator("+")
+                          background: Rectangle {
+                              color: "#4ecdc4"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Repeater {
+                          model: [4, 5, 6]
+                          Button {
+                              text: modelData
+                              Layout.fillWidth: true
+                              Layout.fillHeight: true
+                              font.pixelSize: 20
+                              onClicked: calculator.appendNumber(text)
+                              background: Rectangle {
+                                  color: "#95e1d3"
+                                  radius: 5
+                              }
+                              contentItem: Text {
+                                  text: parent.text
+                                  font: parent.font
+                                  color: "white"
+                                  horizontalAlignment: Text.AlignHCenter
+                                  verticalAlignment: Text.AlignVCenter
+                              }
+                          }
+                      }
+                      
+                      Repeater {
+                          model: [1, 2, 3]
+                          Button {
+                              text: modelData
+                              Layout.fillWidth: true
+                              Layout.fillHeight: true
+                              font.pixelSize: 20
+                              onClicked: calculator.appendNumber(text)
+                              background: Rectangle {
+                                  color: "#95e1d3"
+                                  radius: 5
+                              }
+                              contentItem: Text {
+                                  text: parent.text
+                                  font: parent.font
+                                  color: "white"
+                                  horizontalAlignment: Text.AlignHCenter
+                                  verticalAlignment: Text.AlignVCenter
+                              }
+                          }
+                      }
+                      
+                      Button {
+                          text: "="
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          Layout.rowSpan: 2
+                          font.pixelSize: 20
+                          onClicked: calculator.calculate()
+                          background: Rectangle {
+                              color: "#38b6a8"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Button {
+                          text: "0"
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          Layout.columnSpan: 2
+                          font.pixelSize: 20
+                          onClicked: calculator.appendNumber(text)
+                          background: Rectangle {
+                              color: "#95e1d3"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                      
+                      Button {
+                          text: "."
+                          Layout.fillWidth: true
+                          Layout.fillHeight: true
+                          font.pixelSize: 20
+                          onClicked: {
+                              if (!calculator.display.indexOf(".") !== -1) {
+                                  calculator.appendNumber(".")
+                              }
+                          }
+                          background: Rectangle {
+                              color: "#95e1d3"
+                              radius: 5
+                          }
+                          contentItem: Text {
+                              text: parent.text
+                              font: parent.font
+                              color: "white"
+                              horizontalAlignment: Text.AlignHCenter
+                              verticalAlignment: Text.AlignVCenter
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+      
+      - name: Build with CMake
+        run: |
+          export QT_CMAKE=$(find $Qt6_DIR/.. -name qt-cmake -type f 2>/dev/null | head -n1 || find / -name qt-cmake -type f 2>/dev/null | head -n1)
+          echo "Using: $QT_CMAKE"
+          $QT_CMAKE -B build -S . \
+            -DANDROID_ABI=arm64-v8a \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_ANDROID_BUILD_ALL_ABIS=OFF
+          cmake --build build --config Release -- -j$(nproc)
+      
+      - name: Find APK
+        run: |
+          find build -type f -name "*.apk" -o -name "*.aab"
+          ls -lah build/
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-apk
+          path: build/**/*.apk
+          if-no-files-found: warn
