@@ -50,7 +50,7 @@ jobs:
           
           find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
           
-          qt_add_executable(calculator
+          qt_add_executable(calculator MANUAL_FINALIZATION
               src/main.cpp
               src/calculator.h
               src/calculator.cpp
@@ -86,7 +86,7 @@ jobs:
               QQmlApplicationEngine engine;
               engine.rootContext()->setContextProperty("calculator", &calc);
               
-              const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
+              const QUrl url(QStringLiteral("qrc:/main.qml"));
               engine.load(url);
               
               if (engine.rootObjects().isEmpty())
@@ -104,7 +104,7 @@ jobs:
           
           #include <QObject>
           
-          class Calculator : public QObject {
+          class Calculator : QObject {
               Q_OBJECT
               Q_PROPERTY(QString display READ display NOTIFY displayChanged)
           
@@ -183,19 +183,17 @@ jobs:
           }
           EOF
       
-      - name: Create QML resources
+      - name: Create QML files
         run: |
           mkdir -p qml
           cat > qml/qml.qrc << 'EOF'
           <RCC>
               <qresource prefix="/">
-                  <file>qml/main.qml</file>
+                  <file>main.qml</file>
               </qresource>
           </RCC>
           EOF
-      
-      - name: Create main.qml
-        run: |
+          
           cat > qml/main.qml << 'EOF'
           import QtQuick
           import QtQuick.Controls
