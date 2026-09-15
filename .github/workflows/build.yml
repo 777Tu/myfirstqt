@@ -104,7 +104,7 @@ jobs:
           
           #include <QObject>
           
-          class Calculator : QObject {
+          class Calculator : public QObject {
               Q_OBJECT
               Q_PROPERTY(QString display READ display NOTIFY displayChanged)
           
@@ -461,14 +461,13 @@ jobs:
           }
           EOF
       
-      - name: Build with CMake and androiddeployqt
+      - name: Build with CMake
         run: |
           QT_CMAKE=$(find $QT_ROOT_DIR -name qt-cmake -type f | head -n1)
           $QT_CMAKE -G "Ninja" -B build -S . \
             -DANDROID_ABI=arm64-v8a \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target calculator_prepare_apk_dir
-          cmake --build build --target calculator_make_apk
+          cmake --build build --target calculator_apk
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
