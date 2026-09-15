@@ -1,0 +1,26 @@
+name: Build APK
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.6.2'
+          target: 'android'
+          arch: 'android_arm64_v8a'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Build APK
+        run: |
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          qt-cmake -B build -DANDROID_ABI=arm64-v8a
+          cmake --build build -- -j4
+          cmake --build build --target apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-apk
+          path: build/android-build/*.apk

@@ -1,0 +1,3 @@
+<manifest package="com.oga.sdbapp" xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Oga SDB App"></application>
+</manifest>
