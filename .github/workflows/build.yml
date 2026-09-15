@@ -22,6 +22,10 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
       
+      - name: Install NDK 26.1.10909125
+        run: |
+          sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+      
       - name: Install Qt for Android
         uses: jurplel/install-qt-action@v4
         with:
@@ -34,9 +38,7 @@ jobs:
       - name: Configure environment
         run: |
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          NDK_PATH=$(find $ANDROID_HOME/ndk -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n1)
-          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
-          echo "ANDROID_API_LEVEL=34" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
       
       - name: Create CMakeLists.txt
         run: |
@@ -50,7 +52,7 @@ jobs:
           
           find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
           
-          qt_add_executable(calculator MANUAL_FINALIZATION
+          qt_add_executable(calculator
               src/main.cpp
               src/calculator.h
               src/calculator.cpp
@@ -64,8 +66,6 @@ jobs:
               Qt6::Qml
               Qt6::Quick
           )
-          
-          qt_finalize_executable(calculator)
           EOF
       
       - name: Create main.cpp
@@ -461,13 +461,13 @@ jobs:
           }
           EOF
       
-      - name: Build with CMake
+      - name: Build APK with CMake
         run: |
           QT_CMAKE=$(find $QT_ROOT_DIR -name qt-cmake -type f | head -n1)
           $QT_CMAKE -G "Ninja" -B build -S . \
             -DANDROID_ABI=arm64-v8a \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target calculator_apk
+          cmake --build build
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
