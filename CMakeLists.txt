@@ -1,9 +1,23 @@
-cmake_minimum_required(VERSION 3.21)
-project(myfirstqt LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
-qt_add_executable(myfirstqt main.cpp)
-target_link_libraries(myfirstqt PRIVATE Qt6::Widgets)
-set_target_properties(myfirstqt PROPERTIES
-    QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/android
+cmake_minimum_required(VERSION 3.24)
+project(Calculator LANGUAGES CXX)
+
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+
+qt_add_executable(calculator
+    src/main.cpp
+    src/calculator.h
+    src/calculator.cpp
+    qml/qml.qrc
+)
+
+target_link_libraries(calculator
+    PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
 )

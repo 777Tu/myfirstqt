@@ -1,0 +1,6 @@
+main.o
+myfirstqt
+Makefile
+.qmake.stash
+build/
+*.apk
